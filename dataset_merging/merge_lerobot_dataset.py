@@ -220,7 +220,7 @@ def merge_stats(stats_list):
                     continue
         else:
             # Shapes are different, need special handling for state vectors
-            if feature in ["observation.state", "action"]:
+            if feature in ["observation.state", "action", "actions"]:
                 # For state vectors, we need to handle different dimensions
                 max_dim = max(len(np.array(stats[feature]["mean"]).flatten()) for stats in stats_list)
 
@@ -622,19 +622,31 @@ def copy_data_files(
                             break
                 
                 # 为动作向量填充
+                action_col = None
                 if "action" in df.columns:
-                    # 检查第一个非空值 (Check first non-null value)
-                    for _idx, value in enumerate(df["action"]):
+                    action_col = "action"
+                elif "actions" in df.columns:
+                    action_col = "actions"
+
+                if action_col is not None:
+                    # 检查第一个非空值
+                    for _idx, value in enumerate(df[action_col]):
                         if value is not None and isinstance(value, (list, np.ndarray)):
                             current_dim = len(value)
+
                             if current_dim < action_max_dim:
                                 print(
-                                    f"填充动作向量从 {current_dim} 维到 {action_max_dim} 维"
-                                    f" (Padding action vector from {current_dim} to {action_max_dim} dimensions)"
+                                    f"填充动作向量从 {current_dim} 维到 {action_max_dim} 维 "
+                                    f"(Padding action vector from {current_dim} to {action_max_dim} dimensions)"
                                 )
-                                # 使用零填充到目标维度 (Pad with zeros to target dimension)
-                                df["action"] = df["action"].apply(
-                                    lambda x: np.pad(x, (0, action_max_dim - len(x)), "constant").tolist()
+
+                                # 使用零填充到目标维度
+                                df[action_col] = df[action_col].apply(
+                                    lambda x: np.pad(
+                                        x,
+                                        (0, action_max_dim - len(x)),
+                                        "constant"
+                                    ).tolist()
                                     if x is not None
                                     and isinstance(x, (list, np.ndarray))
                                     and len(x) < action_max_dim
@@ -742,19 +754,31 @@ def copy_data_files(
                                         break
                             
                             # 为动作向量填充
+                            action_col = None
                             if "action" in df.columns:
-                                # 检查第一个非空值 (Check first non-null value)
-                                for _idx, value in enumerate(df["action"]):
+                                action_col = "action"
+                            elif "actions" in df.columns:
+                                action_col = "actions"
+
+                            if action_col is not None:
+                                # 检查第一个非空值
+                                for _idx, value in enumerate(df[action_col]):
                                     if value is not None and isinstance(value, (list, np.ndarray)):
                                         current_dim = len(value)
+
                                         if current_dim < action_max_dim:
                                             print(
-                                                f"填充动作向量从 {current_dim} 维到 {action_max_dim} 维"
-                                                f" (Padding action vector from {current_dim} to {action_max_dim} dimensions)"
+                                                f"填充动作向量从 {current_dim} 维到 {action_max_dim} 维 "
+                                                f"(Padding action vector from {current_dim} to {action_max_dim} dimensions)"
                                             )
-                                            # 使用零填充到目标维度 (Pad with zeros to target dimension)
-                                            df["action"] = df["action"].apply(
-                                                lambda x: np.pad(x, (0, action_max_dim - len(x)), "constant").tolist()
+
+                                            # 使用零填充到目标维度
+                                            df[action_col] = df[action_col].apply(
+                                                lambda x: np.pad(
+                                                    x,
+                                                    (0, action_max_dim - len(x)),
+                                                    "constant"
+                                                ).tolist()
                                                 if x is not None
                                                 and isinstance(x, (list, np.ndarray))
                                                 and len(x) < action_max_dim
@@ -900,22 +924,37 @@ def pad_parquet_data(source_path, target_path, original_dim=14, target_dim=18):
                 )
 
     # 同样处理action列
+    action_col = None
     if "action" in df.columns:
+        action_col = "action"
+    elif "actions" in df.columns:
+        action_col = "actions"
+
+    if action_col is not None:
         # 检查第一行数据
-        first_action = df["action"].iloc[0]
-        print(f"First action type: {type(first_action)}, value: {first_action}")
+        first_action = df[action_col].iloc[0]
+        print(f"First {action_col} type: {type(first_action)}, value: {first_action}")
 
         # 如果是向量
         if isinstance(first_action, (list, np.ndarray)):
             # 检查维度
             action_dim = len(first_action)
-            print(f"action dimension: {action_dim}")
+            print(f"{action_col} dimension: {action_dim}")
 
             if action_dim < target_dim:
                 # 填充向量
-                print(f"Padding action from {action_dim} to {target_dim} dimensions")
-                new_df["action"] = df["action"].apply(
-                    lambda x: np.pad(x, (0, target_dim - len(x)), "constant").tolist()
+                print(f"Padding {action_col} from {action_dim} to {target_dim} dimensions")
+
+                new_df[action_col] = df[action_col].apply(
+                    lambda x: np.pad(
+                        x,
+                        (0, target_dim - len(x)),
+                        "constant"
+                    ).tolist()
+                    if x is not None
+                    and isinstance(x, (list, np.ndarray))
+                    and len(x) < target_dim
+                    else x
                 )
 
     # 确保目标目录存在
@@ -1347,11 +1386,19 @@ def merge_datasets(
                                         break
                             
                             # 检查动作向量维度
+                            action_col = None
                             if "action" in df.columns:
-                                for action_val in df["action"]:
+                                action_col = "action"
+                            elif "actions" in df.columns:
+                                action_col = "actions"
+
+                            if action_col is not None:
+                                for action_val in df[action_col]:
                                     if action_val is not None and isinstance(action_val, (list, np.ndarray)):
                                         folder_action_dim = len(action_val)
-                                        print(f"Detected {folder_action_dim} dimensions for action in {folder}")
+                                        print(
+                                            f"Detected {folder_action_dim} dimensions for {action_col} in {folder}"
+                                        )
                                         break
                                         
                             # 如果两个维度都已检测到，可以停止搜索
@@ -1437,13 +1484,22 @@ def merge_datasets(
                                         stats["stats"]["observation.state"][stat_type] = padded
                         
                         # 分别处理action的统计数据
-                        if "action" in stats["stats"] and folder_action_dimensions[folder] < action_max_dim:
-                            for stat_type in ["mean", "std", "max", "min"]:
-                                if stat_type in stats["stats"]["action"]:
-                                    values = stats["stats"]["action"][stat_type]
-                                    if isinstance(values, list) and len(values) < action_max_dim:
-                                        padded = values + [0.0] * (action_max_dim - len(values))
-                                        stats["stats"]["action"][stat_type] = padded
+                    action_key = None
+                    if "action" in stats["stats"]:
+                        action_key = "action"
+                    elif "actions" in stats["stats"]:
+                        action_key = "actions"
+
+                    if (
+                        action_key is not None
+                        and folder_action_dimensions.get(folder, 0) < action_max_dim
+                    ):
+                        for stat_type in ["mean", "std", "max", "min"]:
+                            if stat_type in stats["stats"][action_key]:
+                                values = stats["stats"][action_key][stat_type]
+                                if isinstance(values, list) and len(values) < action_max_dim:
+                                    padded = values + [0.0] * (action_max_dim - len(values))
+                                    stats["stats"][action_key][stat_type] = padded
 
                     all_episodes_stats.append(stats)
 
@@ -1614,22 +1670,34 @@ def merge_datasets(
         # 使用检测到的最大状态和动作维度
         actual_state_max_dim = state_max_dim
         actual_action_max_dim = action_max_dim
-        
+
         for _folder, dim in folder_state_dimensions.items():
             actual_state_max_dim = max(actual_state_max_dim, dim)
-            
+
         for _folder, dim in folder_action_dimensions.items():
             actual_action_max_dim = max(actual_action_max_dim, dim)
-        
-        # 更新状态向量维度
-        if "observation.state" in info["features"] and "shape" in info["features"]["observation.state"]:
+
+        # ===== 更新状态向量维度 =====
+        if (
+            "observation.state" in info["features"]
+            and "shape" in info["features"]["observation.state"]
+        ):
             info["features"]["observation.state"]["shape"] = [actual_state_max_dim]
             print(f"Updated observation.state shape to {actual_state_max_dim}")
-            
-        # 更新动作向量维度
-        if "action" in info["features"] and "shape" in info["features"]["action"]:
-            info["features"]["action"]["shape"] = [actual_action_max_dim]
-            print(f"Updated action shape to {actual_action_max_dim}")
+
+        # ===== 更新动作向量维度（action / actions）=====
+        action_feat_key = None
+        if "action" in info["features"]:
+            action_feat_key = "action"
+        elif "actions" in info["features"]:
+            action_feat_key = "actions"
+
+        if (
+            action_feat_key is not None
+            and "shape" in info["features"][action_feat_key]
+        ):
+            info["features"][action_feat_key]["shape"] = [actual_action_max_dim]
+            print(f"Updated {action_feat_key} shape to {actual_action_max_dim}")
 
     # 更新视频总数 (Update total videos)
     info["total_videos"] = total_videos
