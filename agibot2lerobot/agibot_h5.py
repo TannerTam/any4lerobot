@@ -14,6 +14,9 @@ from lerobot.datasets.lerobot_dataset import LeRobotDataset
 from lerobot.datasets.utils import validate_episode_buffer, validate_frame
 from ray.runtime_env import RuntimeEnv
 
+import json
+
+PROCESSED_FILE = "processed.json"
 
 class AgiBotDataset(LeRobotDataset):
     def add_frame(self, frame: dict) -> None:
@@ -127,6 +130,27 @@ class AgiBotDataset(LeRobotDataset):
         temp_path = Path(tempfile.mkdtemp(dir=self.root)) / f"{video_key}_{episode_index:03d}.mp4"
         shutil.copy(self.current_videos[video_key], temp_path)
         return temp_path
+    
+
+def load_processed(output_path: Path):
+    processed_file = output_path / PROCESSED_FILE
+    if processed_file.exists():
+        with processed_file.open("r") as f:
+            return set(json.load(f))
+    return set()
+
+
+def save_processed(output_path: Path, task_id: str):
+    processed_file = output_path / PROCESSED_FILE
+    if processed_file.exists():
+        with processed_file.open("r") as f:
+            data = set(json.load(f))
+    else:
+        data = set()
+
+    data.add(f"task_{task_id}")
+    with processed_file.open("w") as f:
+        json.dump(list(data), f, indent=2)
 
 
 def get_all_tasks(src_path: Path, output_path: Path):
@@ -136,8 +160,26 @@ def get_all_tasks(src_path: Path, output_path: Path):
         yield (json_file, local_dir.resolve())
 
 
-def save_as_lerobot_dataset(agibot_world_config, task: tuple[Path, Path], save_depth):
+def save_as_lerobot_dataset(agibot_world_config, task: tuple[Path, Path], save_depth, output_path: Path):
     json_file, local_dir = task
+    task_id = json_file.stem
+
+    print(f"[START] processing {task_id}")
+
+    # ✅ 加载 processed.json
+    processed_set = load_processed(output_path)
+
+    # ✅ 如果 task_id 已记录，跳过
+    if task_id in processed_set:
+        print(f"[SKIP] {task_id} already processed.")
+        return
+
+    # ✅ 如果目录存在但 task_id 不在 processed.json → 中断任务，需要重新做
+    if local_dir.exists() and task_id not in processed_set:
+        print(f"[RESET] {task_id} existed but was incomplete. Removing directory and restarting.")
+        shutil.rmtree(local_dir)
+
+
     print(f"processing {json_file.stem}, saving to {local_dir}")
     src_path = json_file.parent.parent
     task_info = get_task_info(json_file)
@@ -196,6 +238,10 @@ def save_as_lerobot_dataset(agibot_world_config, task: tuple[Path, Path], save_d
         gc.collect()
         print(f"process done for {json_file.stem}, episode_id {eid}, len {len(frames)}")
 
+    # ✅ 完成后写入 processed.json
+    save_processed(output_path, task_id)
+    print(f"[DONE] {task_id} successfully saved!")
+
 
 def main(
     src_path: str,
@@ -205,7 +251,11 @@ def main(
     cpus_per_task: int,
     save_depth: bool,
     debug: bool = False,
-):
+):  
+    output_path: Path = Path(output_path)
+    processed_set = load_processed(output_path)
+    print(f"Already processed tasks: {processed_set}")
+    
     tasks = get_all_tasks(src_path, output_path)
 
     agibot_world_config, type_task_ids = (
@@ -237,7 +287,7 @@ def main(
         remote_task = ray.remote(save_as_lerobot_dataset).options(num_cpus=cpus_per_task)
         futures = []
         for task in tasks:
-            futures.append((task[0].stem, remote_task.remote(agibot_world_config, task, save_depth)))
+            futures.append((task[0].stem, remote_task.remote(agibot_world_config, task, save_depth, output_path,)))
 
         for task, future in futures:
             try:
